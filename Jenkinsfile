@@ -20,29 +20,29 @@ pipeline {
                 }
             }
         }
-        stage('Install Docker') {
-    steps {
-        sh '''
-        # Check if docker exists
-        if ! command -v docker &> /dev/null
-        then
-            echo "Docker not found. Installing Docker..."
+//         stage('Install Docker') {
+//     steps {
+//         sh '''
+//         # Check if docker exists
+//         if ! command -v docker &> /dev/null
+//         then
+//             echo "Docker not found. Installing Docker..."
 
-            sudo apt update
-            sudo apt install docker.io -y
+//             sudo apt update
+//             sudo apt install docker.io -y
 
-            sudo systemctl start docker
-            sudo systemctl enable docker
+//             sudo systemctl start docker
+//             sudo systemctl enable docker
 
-            // sudo usermod -aG docker jenkins
-        else
-            echo "Docker already installed"
-        fi
+//             // sudo usermod -aG docker jenkins
+//         else
+//             echo "Docker already installed"
+//         fi
 
-        docker --version
-        '''
-    }
-}
+//         docker --version
+//         '''
+//     }
+// }
         // stage('Build Docker Image') {
         //     steps {
         //         dir("${WORK_DIR}") {
