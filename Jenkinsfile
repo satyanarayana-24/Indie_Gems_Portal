@@ -92,9 +92,19 @@ pipeline {
 //         '''
 //     }
 // }
+//         stage('Configure EKS Access') {
+//     steps {
+//         sh '''
+//         aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
+//         /root/bin/kubectl config current-context
+//         '''
+//     }
+// }
+
         stage('Configure EKS Access') {
     steps {
         sh '''
+        export PATH=$PATH:/root/bin
         aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
         /root/bin/kubectl config current-context
         '''
