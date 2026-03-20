@@ -104,9 +104,9 @@ pipeline {
         stage('Configure EKS Access') {
     steps {
         sh '''
-        export PATH=$PATH:/root/bin
+        export PATH=$PATH:/usr/local/bin
         aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
-        /usr/local/bin/ config current-context
+        /usr/local/bin/kubectl config current-context
         '''
     }
 }
