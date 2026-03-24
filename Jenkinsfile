@@ -13,7 +13,7 @@ pipeline {
         AWS_REGION = "ap-south-1"
         EKS_CLUSTER = "mycluster"
         KUBECONFIG = "/var/lib/jenkins/.kube/config"
-        NOTIFY_EMAIL = "narayanag666@gmail.com"
+        NOTIFY_EMAIL = "satyanarayana.gidituri666@gmail.com"
     }
 
     stages {
