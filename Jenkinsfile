@@ -13,6 +13,7 @@ pipeline {
         AWS_REGION = "ap-south-1"
         EKS_CLUSTER = "mycluster"
         KUBECONFIG = "/var/lib/jenkins/.kube/config"
+        NOTIFY_EMAIL = "narayanag666@gmail.com"
     }
 
     stages {
@@ -42,9 +43,7 @@ pipeline {
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
-                    sh """
-                        echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
-                    """
+                    sh "echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin"
                 }
             }
         }
@@ -55,67 +54,29 @@ pipeline {
             }
         }
 
-        // stage('Run Docker Container') {
-        //     steps {
-        //         sh '''
-        //             docker rm -f ${CONTAINER_NAME} || true
-        //             docker run -d -p ${PORT}:${CONTAINER_PORT} \
-        //             --name ${CONTAINER_NAME} \
-        //             ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}
-        //         '''
-        //     }
-        // }
-
-            stage('Update K8s Image') {
+        stage('Update K8s Image') {
             steps {
                 sh '''
-                sed -i "s|image:.*|image: $DOCKERHUB_USER/$IMAGE_NAME:$IMAGE_TAG|" k8s/deployment.yml
+                    sed -i "s|image:.*|image: $DOCKERHUB_USER/$IMAGE_NAME:$IMAGE_TAG|" k8s/deployment.yml
                 '''
             }
         }
 
-        // stage('Configure EKS Access') {
-        //     steps {
-        //         sh '''
-        //         aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
-        //         kubectl config current-context
-        //         '''
-        //     }
-        // }
-
-//       stage('Configure EKS Access') {
-//     steps {
-//         sh '''
-//         export PATH=$PATH:/usr/bin
-//         aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
-//         kubectl config current-context
-//         '''
-//     }
-// }
-//         stage('Configure EKS Access') {
-//     steps {
-//         sh '''
-//         aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
-//         /root/bin/kubectl config current-context
-//         '''
-//     }
-// }
-
         stage('Configure EKS Access') {
-    steps {
-        sh '''
-        export PATH=$PATH:/usr/local/bin
-        aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
-        /usr/local/bin/kubectl config current-context
-        '''
-    }
-}
+            steps {
+                sh '''
+                    export PATH=$PATH:/usr/local/bin
+                    aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
+                    /usr/local/bin/kubectl config current-context
+                '''
+            }
+        }
 
         stage('Deploy to Kubernetes') {
             steps {
                 sh '''
-                kubectl apply -f k8s/deployment.yml
-                kubectl apply -f k8s/service.yml
+                    kubectl apply -f k8s/deployment.yml
+                    kubectl apply -f k8s/service.yml
                 '''
             }
         }
@@ -123,15 +84,174 @@ pipeline {
         stage('Verify Deployment') {
             steps {
                 sh '''
-                kubectl rollout status deployment python-devops-app || true
-                kubectl get pods -o wide
-                kubectl get svc
+                    kubectl rollout status deployment python-devops-app || true
+                    kubectl get pods -o wide
+                    kubectl get svc
                 '''
             }
         }
     }
+
+    post {
+        success {
+            emailext(
+                subject: "Build & Deploy Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """
+                    <p>Good news!</p>
+                    <p>Build and deployment were successful.</p>
+                    <p><b>Job:</b> ${env.JOB_NAME}</p>
+                    <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
+                    <p><b>URL:</b> ${env.BUILD_URL}</p>
+                """,
+                to: "${NOTIFY_EMAIL}",
+                mimeType: 'text/html'
+            )
+        }
+        failure {
+            emailext(
+                subject: "Build & Deploy Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: "Build or deployment failed. Check details at ${env.BUILD_URL}",
+                to: "${NOTIFY_EMAIL}"
+            )
+        }
+    }
 }
 
+// starting for k8s automate without email send
+// pipeline {
+//     agent any
+
+//     environment {
+//         WORK_DIR = "/var/lib/jenkins/workspace/Game"
+//         IMAGE_NAME = "indie-gems"
+//         IMAGE_TAG = "${BUILD_NUMBER}"
+//         CONTAINER_NAME = "indie-gems-container"
+//         PORT = "9676"
+//         DOCKERHUB_USER = "9397054542"
+//         DOCKER_CREDS = "dockerCred"
+//         CONTAINER_PORT = "80"
+//         AWS_REGION = "ap-south-1"
+//         EKS_CLUSTER = "mycluster"
+//         KUBECONFIG = "/var/lib/jenkins/.kube/config"
+//     }
+
+//     stages {
+//         stage('Checkout Code') {
+//             steps {
+//                 dir("${WORK_DIR}") {
+//                     git branch: 'main', url: 'https://github.com/satyanarayana-24/Indie_Gems_Portal.git'
+//                 }
+//             }
+//         }
+
+//         stage('Build Docker Image') {
+//             steps {
+//                 dir("${WORK_DIR}") {
+//                     sh '''
+//                         docker rmi -f ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG} || true
+//                         docker build -t ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG} .
+//                     '''
+//                 }
+//             }
+//         }
+
+//         stage('DockerHub Login') {
+//             steps {
+//                 withCredentials([usernamePassword(
+//                     credentialsId: "${DOCKER_CREDS}",
+//                     usernameVariable: 'DOCKER_USER',
+//                     passwordVariable: 'DOCKER_PASS'
+//                 )]) {
+//                     sh """
+//                         echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+//                     """
+//                 }
+//             }
+//         }
+
+//         stage('Push Image to DockerHub') {
+//             steps {
+//                 sh "docker push ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
+//             }
+//         }
+
+//         // stage('Run Docker Container') {
+//         //     steps {
+//         //         sh '''
+//         //             docker rm -f ${CONTAINER_NAME} || true
+//         //             docker run -d -p ${PORT}:${CONTAINER_PORT} \
+//         //             --name ${CONTAINER_NAME} \
+//         //             ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}
+//         //         '''
+//         //     }
+//         // }
+
+//             stage('Update K8s Image') {
+//             steps {
+//                 sh '''
+//                 sed -i "s|image:.*|image: $DOCKERHUB_USER/$IMAGE_NAME:$IMAGE_TAG|" k8s/deployment.yml
+//                 '''
+//             }
+//         }
+
+//         // stage('Configure EKS Access') {
+//         //     steps {
+//         //         sh '''
+//         //         aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
+//         //         kubectl config current-context
+//         //         '''
+//         //     }
+//         // }
+
+// //       stage('Configure EKS Access') {
+// //     steps {
+// //         sh '''
+// //         export PATH=$PATH:/usr/bin
+// //         aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
+// //         kubectl config current-context
+// //         '''
+// //     }
+// // }
+// //         stage('Configure EKS Access') {
+// //     steps {
+// //         sh '''
+// //         aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
+// //         /root/bin/kubectl config current-context
+// //         '''
+// //     }
+// // }
+
+//         stage('Configure EKS Access') {
+//     steps {
+//         sh '''
+//         export PATH=$PATH:/usr/local/bin
+//         aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
+//         /usr/local/bin/kubectl config current-context
+//         '''
+//     }
+// }
+
+//         stage('Deploy to Kubernetes') {
+//             steps {
+//                 sh '''
+//                 kubectl apply -f k8s/deployment.yml
+//                 kubectl apply -f k8s/service.yml
+//                 '''
+//             }
+//         }
+
+//         stage('Verify Deployment') {
+//             steps {
+//                 sh '''
+//                 kubectl rollout status deployment python-devops-app || true
+//                 kubectl get pods -o wide
+//                 kubectl get svc
+//                 '''
+//             }
+//         }
+//     }
+// }
+// upto here this is my k8s automate working fine code  /////////////
 
 // working for automate without k8s
 // pipeline {
