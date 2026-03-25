@@ -5,11 +5,8 @@ pipeline {
         WORK_DIR = "/var/lib/jenkins/workspace/Game"
         IMAGE_NAME = "indie-gems"
         IMAGE_TAG = "${BUILD_NUMBER}"
-        CONTAINER_NAME = "indie-gems-container"
-        PORT = "9676"
         DOCKERHUB_USER = "9397054542"
         DOCKER_CREDS = "dockerCred"
-        CONTAINER_PORT = "80"
         AWS_REGION = "ap-south-1"
         EKS_CLUSTER = "myclusterr"
         KUBECONFIG = "/var/lib/jenkins/.kube/config"
@@ -20,147 +17,291 @@ pipeline {
 
         stage('Checkout Code') {
             steps {
-                dir("${WORK_DIR}") {
-                    git branch: 'main',
-                        url: 'https://github.com/satyanarayana-24/Indie_Gems_Portal.git'
+                script {
+                    try {
+                        dir("${WORK_DIR}") {
+                            git branch: 'main',
+                                url: 'https://github.com/satyanarayana-24/Indie_Gems_Portal.git'
+                        }
+
+                        sendMail("Checkout Code", "SUCCESS")
+
+                    } catch (e) {
+                        sendMail("Checkout Code", "FAILURE")
+                        error("Checkout failed")
+                    }
                 }
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                dir("${WORK_DIR}") {
-                    sh '''
-                        docker rmi -f ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG} || true
-                        docker build -t ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG} .
-                    '''
+                script {
+                    try {
+                        dir("${WORK_DIR}") {
+                            sh '''
+                                docker rmi -f ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG} || true
+                                docker build -t ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG} .
+                            '''
+                        }
+
+                        sendMail("Build Docker Image", "SUCCESS")
+
+                    } catch (e) {
+                        sendMail("Build Docker Image", "FAILURE")
+                        error("Build failed")
+                    }
                 }
             }
         }
 
         stage('DockerHub Login') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: "${DOCKER_CREDS}",
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-                    sh "echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin"
+                script {
+                    try {
+                        withCredentials([usernamePassword(
+                            credentialsId: "${DOCKER_CREDS}",
+                            usernameVariable: 'DOCKER_USER',
+                            passwordVariable: 'DOCKER_PASS'
+                        )]) {
+                            sh "echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin"
+                        }
+
+                        sendMail("DockerHub Login", "SUCCESS")
+
+                    } catch (e) {
+                        sendMail("DockerHub Login", "FAILURE")
+                        error("Docker login failed")
+                    }
                 }
             }
         }
 
-        stage('Push Image to DockerHub') {
+        stage('Push Image') {
             steps {
-                sh "docker push ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
-            }
-        }
+                script {
+                    try {
+                        sh "docker push ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
 
-        stage('Update K8s Image') {
-            steps {
-                dir("${WORK_DIR}") {
-                    sh '''
-                        sed -i "s|image:.*|image: $DOCKERHUB_USER/$IMAGE_NAME:$IMAGE_TAG|" k8s/deployment.yml
-                    '''
+                        sendMail("Push Image", "SUCCESS")
+
+                    } catch (e) {
+                        sendMail("Push Image", "FAILURE")
+                        error("Push failed")
+                    }
                 }
-            }
-        }
-
-        stage('Configure EKS Access') {
-            steps {
-                sh '''
-                    export PATH=$PATH:/usr/local/bin
-                    aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
-                    kubectl config current-context
-                '''
             }
         }
 
         stage('Deploy to Kubernetes') {
             steps {
-                dir("${WORK_DIR}") {
-                    sh '''
-                        kubectl apply -f k8s/deployment.yml
-                        kubectl apply -f k8s/service.yml
-                    '''
-                }
-            }
-        }
+                script {
+                    try {
+                        dir("${WORK_DIR}") {
+                            sh '''
+                                sed -i "s|image:.*|image: $DOCKERHUB_USER/$IMAGE_NAME:$IMAGE_TAG|" k8s/deployment.yml
+                                aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
+                                kubectl apply -f k8s/deployment.yml
+                                kubectl apply -f k8s/service.yml
+                            '''
+                        }
 
-        stage('Verify Deployment') {
-            steps {
-                sh '''
-                    kubectl rollout status deployment python-devops-app || true
-                    kubectl get pods -o wide
-                    kubectl get svc
-                '''
+                        sendMail("Deploy to Kubernetes", "SUCCESS")
+
+                    } catch (e) {
+                        sendMail("Deploy to Kubernetes", "FAILURE")
+                        error("Deployment failed")
+                    }
+                }
             }
         }
     }
 
     post {
-
         always {
-            echo "Pipeline finished with status: ${currentBuild.currentResult}"
-        }
-
-        success {
-            emailext(
-                subject: " SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                body: """
-                    <h2 style="color:green;">Build & Deployment Successful</h2>
-                    <p><b>Job:</b> ${env.JOB_NAME}</p>
-                    <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
-                    <p><b>Status:</b> ${currentBuild.currentResult}</p>
-                    <p><b>Docker Image:</b> ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}</p>
-                    <p><b>URL:</b> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
-                """,
-                to: "${NOTIFY_EMAIL}",
-                mimeType: 'text/html'
-            )
-        }
-
-        failure {
-            emailext(
-                subject: " FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                body: """
-                    <h2 style="color:red;">Build or Deployment Failed</h2>
-                    <p><b>Job:</b> ${env.JOB_NAME}</p>
-                    <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
-                    <p><b>Status:</b> ${currentBuild.currentResult}</p>
-                    <p><b>Check Logs:</b> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
-                """,
-                to: "${NOTIFY_EMAIL}",
-                mimeType: 'text/html'
-            )
-        }
-
-        unstable {
-            emailext(
-                subject: " UNSTABLE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                body: """
-                    <h3>Build is Unstable</h3>
-                    <p>Check details: <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
-                """,
-                to: "${NOTIFY_EMAIL}",
-                mimeType: 'text/html'
-            )
-        }
-
-        aborted {
-            emailext(
-                subject: " ABORTED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                body: """
-                    <h3>Build was Aborted</h3>
-                    <p>Check details: <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
-                """,
-                to: "${NOTIFY_EMAIL}",
-                mimeType: 'text/html'
-            )
+            echo "Pipeline completed: ${currentBuild.currentResult}"
         }
     }
 }
 
+def sendMail(stageName, status) {
+    emailext(
+        subject: "${status}: ${stageName} - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+        body: """
+            <h3>Stage: ${stageName}</h3>
+            <p><b>Status:</b> ${status}</p>
+            <p><b>Job:</b> ${env.JOB_NAME}</p>
+            <p><b>Build:</b> ${env.BUILD_NUMBER}</p>
+            <p><b>URL:</b> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+        """,
+        to: "${env.NOTIFY_EMAIL}",
+        mimeType: 'text/html'
+    )
+}
+// below is for sucess fail abort
+// pipeline {
+//     agent any
+
+//     environment {
+//         WORK_DIR = "/var/lib/jenkins/workspace/Game"
+//         IMAGE_NAME = "indie-gems"
+//         IMAGE_TAG = "${BUILD_NUMBER}"
+//         CONTAINER_NAME = "indie-gems-container"
+//         PORT = "9676"
+//         DOCKERHUB_USER = "9397054542"
+//         DOCKER_CREDS = "dockerCred"
+//         CONTAINER_PORT = "80"
+//         AWS_REGION = "ap-south-1"
+//         EKS_CLUSTER = "myclusterr"
+//         KUBECONFIG = "/var/lib/jenkins/.kube/config"
+//         NOTIFY_EMAIL = "satyanarayana.gidituri666@gmail.com"
+//     }
+
+//     stages {
+
+//         stage('Checkout Code') {
+//             steps {
+//                 dir("${WORK_DIR}") {
+//                     git branch: 'main',
+//                         url: 'https://github.com/satyanarayana-24/Indie_Gems_Portal.git'
+//                 }
+//             }
+//         }
+
+//         stage('Build Docker Image') {
+//             steps {
+//                 dir("${WORK_DIR}") {
+//                     sh '''
+//                         docker rmi -f ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG} || true
+//                         docker build -t ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG} .
+//                     '''
+//                 }
+//             }
+//         }
+
+//         stage('DockerHub Login') {
+//             steps {
+//                 withCredentials([usernamePassword(
+//                     credentialsId: "${DOCKER_CREDS}",
+//                     usernameVariable: 'DOCKER_USER',
+//                     passwordVariable: 'DOCKER_PASS'
+//                 )]) {
+//                     sh "echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin"
+//                 }
+//             }
+//         }
+
+//         stage('Push Image to DockerHub') {
+//             steps {
+//                 sh "docker push ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
+//             }
+//         }
+
+//         stage('Update K8s Image') {
+//             steps {
+//                 dir("${WORK_DIR}") {
+//                     sh '''
+//                         sed -i "s|image:.*|image: $DOCKERHUB_USER/$IMAGE_NAME:$IMAGE_TAG|" k8s/deployment.yml
+//                     '''
+//                 }
+//             }
+//         }
+
+//         stage('Configure EKS Access') {
+//             steps {
+//                 sh '''
+//                     export PATH=$PATH:/usr/local/bin
+//                     aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
+//                     kubectl config current-context
+//                 '''
+//             }
+//         }
+
+//         stage('Deploy to Kubernetes') {
+//             steps {
+//                 dir("${WORK_DIR}") {
+//                     sh '''
+//                         kubectl apply -f k8s/deployment.yml
+//                         kubectl apply -f k8s/service.yml
+//                     '''
+//                 }
+//             }
+//         }
+
+//         stage('Verify Deployment') {
+//             steps {
+//                 sh '''
+//                     kubectl rollout status deployment python-devops-app || true
+//                     kubectl get pods -o wide
+//                     kubectl get svc
+//                 '''
+//             }
+//         }
+//     }
+
+//     post {
+
+//         always {
+//             echo "Pipeline finished with status: ${currentBuild.currentResult}"
+//         }
+
+//         success {
+//             emailext(
+//                 subject: " SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+//                 body: """
+//                     <h2 style="color:green;">Build & Deployment Successful</h2>
+//                     <p><b>Job:</b> ${env.JOB_NAME}</p>
+//                     <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
+//                     <p><b>Status:</b> ${currentBuild.currentResult}</p>
+//                     <p><b>Docker Image:</b> ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}</p>
+//                     <p><b>URL:</b> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+//                 """,
+//                 to: "${NOTIFY_EMAIL}",
+//                 mimeType: 'text/html'
+//             )
+//         }
+
+//         failure {
+//             emailext(
+//                 subject: " FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+//                 body: """
+//                     <h2 style="color:red;">Build or Deployment Failed</h2>
+//                     <p><b>Job:</b> ${env.JOB_NAME}</p>
+//                     <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
+//                     <p><b>Status:</b> ${currentBuild.currentResult}</p>
+//                     <p><b>Check Logs:</b> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+//                 """,
+//                 to: "${NOTIFY_EMAIL}",
+//                 mimeType: 'text/html'
+//             )
+//         }
+
+//         unstable {
+//             emailext(
+//                 subject: " UNSTABLE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+//                 body: """
+//                     <h3>Build is Unstable</h3>
+//                     <p>Check details: <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+//                 """,
+//                 to: "${NOTIFY_EMAIL}",
+//                 mimeType: 'text/html'
+//             )
+//         }
+
+//         aborted {
+//             emailext(
+//                 subject: " ABORTED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+//                 body: """
+//                     <h3>Build was Aborted</h3>
+//                     <p>Check details: <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+//                 """,
+//                 to: "${NOTIFY_EMAIL}",
+//                 mimeType: 'text/html'
+//             )
+//         }
+//     }
+// }
+//  above is for sucess fail abort unstable
 // commented for get all stages mail this give mail for only one stage
 // pipeline {
 //     agent any
