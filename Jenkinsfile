@@ -17,10 +17,12 @@ pipeline {
     }
 
     stages {
+
         stage('Checkout Code') {
             steps {
                 dir("${WORK_DIR}") {
-                    git branch: 'main', url: 'https://github.com/satyanarayana-24/Indie_Gems_Portal.git'
+                    git branch: 'main',
+                        url: 'https://github.com/satyanarayana-24/Indie_Gems_Portal.git'
                 }
             }
         }
@@ -43,7 +45,7 @@ pipeline {
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
-                    sh "echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin"
+                    sh "echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin"
                 }
             }
         }
@@ -56,9 +58,11 @@ pipeline {
 
         stage('Update K8s Image') {
             steps {
-                sh '''
-                    sed -i "s|image:.*|image: $DOCKERHUB_USER/$IMAGE_NAME:$IMAGE_TAG|" k8s/deployment.yml
-                '''
+                dir("${WORK_DIR}") {
+                    sh '''
+                        sed -i "s|image:.*|image: $DOCKERHUB_USER/$IMAGE_NAME:$IMAGE_TAG|" k8s/deployment.yml
+                    '''
+                }
             }
         }
 
@@ -67,17 +71,19 @@ pipeline {
                 sh '''
                     export PATH=$PATH:/usr/local/bin
                     aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
-                    /usr/local/bin/kubectl config current-context
+                    kubectl config current-context
                 '''
             }
         }
 
         stage('Deploy to Kubernetes') {
             steps {
-                sh '''
-                    kubectl apply -f k8s/deployment.yml
-                    kubectl apply -f k8s/service.yml
-                '''
+                dir("${WORK_DIR}") {
+                    sh '''
+                        kubectl apply -f k8s/deployment.yml
+                        kubectl apply -f k8s/service.yml
+                    '''
+                }
             }
         }
 
@@ -93,29 +99,189 @@ pipeline {
     }
 
     post {
+
+        always {
+            echo "Pipeline finished with status: ${currentBuild.currentResult}"
+        }
+
         success {
             emailext(
-                subject: "Build & Deploy Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                subject: " SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                 body: """
-                    <p>Good news!</p>
-                    <p>Build and deployment were successful.</p>
+                    <h2 style="color:green;">Build & Deployment Successful</h2>
                     <p><b>Job:</b> ${env.JOB_NAME}</p>
                     <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
-                    <p><b>URL:</b> ${env.BUILD_URL}</p>
+                    <p><b>Status:</b> ${currentBuild.currentResult}</p>
+                    <p><b>Docker Image:</b> ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}</p>
+                    <p><b>URL:</b> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
                 """,
                 to: "${NOTIFY_EMAIL}",
                 mimeType: 'text/html'
             )
         }
+
         failure {
             emailext(
-                subject: "Build & Deploy Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                body: "Build or deployment failed. Check details at ${env.BUILD_URL}",
-                to: "${NOTIFY_EMAIL}"
+                subject: " FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """
+                    <h2 style="color:red;">Build or Deployment Failed</h2>
+                    <p><b>Job:</b> ${env.JOB_NAME}</p>
+                    <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
+                    <p><b>Status:</b> ${currentBuild.currentResult}</p>
+                    <p><b>Check Logs:</b> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+                """,
+                to: "${NOTIFY_EMAIL}",
+                mimeType: 'text/html'
+            )
+        }
+
+        unstable {
+            emailext(
+                subject: " UNSTABLE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """
+                    <h3>Build is Unstable</h3>
+                    <p>Check details: <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+                """,
+                to: "${NOTIFY_EMAIL}",
+                mimeType: 'text/html'
+            )
+        }
+
+        aborted {
+            emailext(
+                subject: " ABORTED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """
+                    <h3>Build was Aborted</h3>
+                    <p>Check details: <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+                """,
+                to: "${NOTIFY_EMAIL}",
+                mimeType: 'text/html'
             )
         }
     }
 }
+
+// commented for get all stages mail this give mail for only one stage
+// pipeline {
+//     agent any
+
+//     environment {
+//         WORK_DIR = "/var/lib/jenkins/workspace/Game"
+//         IMAGE_NAME = "indie-gems"
+//         IMAGE_TAG = "${BUILD_NUMBER}"
+//         CONTAINER_NAME = "indie-gems-container"
+//         PORT = "9676"
+//         DOCKERHUB_USER = "9397054542"
+//         DOCKER_CREDS = "dockerCred"
+//         CONTAINER_PORT = "80"
+//         AWS_REGION = "ap-south-1"
+//         EKS_CLUSTER = "mycluster"
+//         KUBECONFIG = "/var/lib/jenkins/.kube/config"
+//         NOTIFY_EMAIL = "satyanarayana.gidituri666@gmail.com"
+//     }
+
+//     stages {
+//         stage('Checkout Code') {
+//             steps {
+//                 dir("${WORK_DIR}") {
+//                     git branch: 'main', url: 'https://github.com/satyanarayana-24/Indie_Gems_Portal.git'
+//                 }
+//             }
+//         }
+
+//         stage('Build Docker Image') {
+//             steps {
+//                 dir("${WORK_DIR}") {
+//                     sh '''
+//                         docker rmi -f ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG} || true
+//                         docker build -t ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG} .
+//                     '''
+//                 }
+//             }
+//         }
+
+//         stage('DockerHub Login') {
+//             steps {
+//                 withCredentials([usernamePassword(
+//                     credentialsId: "${DOCKER_CREDS}",
+//                     usernameVariable: 'DOCKER_USER',
+//                     passwordVariable: 'DOCKER_PASS'
+//                 )]) {
+//                     sh "echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin"
+//                 }
+//             }
+//         }
+
+//         stage('Push Image to DockerHub') {
+//             steps {
+//                 sh "docker push ${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
+//             }
+//         }
+
+//         stage('Update K8s Image') {
+//             steps {
+//                 sh '''
+//                     sed -i "s|image:.*|image: $DOCKERHUB_USER/$IMAGE_NAME:$IMAGE_TAG|" k8s/deployment.yml
+//                 '''
+//             }
+//         }
+
+//         stage('Configure EKS Access') {
+//             steps {
+//                 sh '''
+//                     export PATH=$PATH:/usr/local/bin
+//                     aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
+//                     /usr/local/bin/kubectl config current-context
+//                 '''
+//             }
+//         }
+
+//         stage('Deploy to Kubernetes') {
+//             steps {
+//                 sh '''
+//                     kubectl apply -f k8s/deployment.yml
+//                     kubectl apply -f k8s/service.yml
+//                 '''
+//             }
+//         }
+
+//         stage('Verify Deployment') {
+//             steps {
+//                 sh '''
+//                     kubectl rollout status deployment python-devops-app || true
+//                     kubectl get pods -o wide
+//                     kubectl get svc
+//                 '''
+//             }
+//         }
+//     }
+
+//     post {
+//         success {
+//             emailext(
+//                 subject: "Build & Deploy Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+//                 body: """
+//                     <p>Good news!</p>
+//                     <p>Build and deployment were successful.</p>
+//                     <p><b>Job:</b> ${env.JOB_NAME}</p>
+//                     <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
+//                     <p><b>URL:</b> ${env.BUILD_URL}</p>
+//                 """,
+//                 to: "${NOTIFY_EMAIL}",
+//                 mimeType: 'text/html'
+//             )
+//         }
+//         failure {
+//             emailext(
+//                 subject: "Build & Deploy Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+//                 body: "Build or deployment failed. Check details at ${env.BUILD_URL}",
+//                 to: "${NOTIFY_EMAIL}"
+//             )
+//         }
+//     }
+// }
+// commeted above for send mail to one stage i want to send for all stages
+
 
 // starting for k8s automate without email send
 // pipeline {
