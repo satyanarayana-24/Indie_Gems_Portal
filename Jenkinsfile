@@ -34,11 +34,11 @@ pipeline {
             }
         }
     //nexus starting
-         stage('COMPILE') {
-            steps {
-              sh 'mvn clean package -X'
-            }
-        } 
+        //  stage('COMPILE') {
+        //     steps {
+        //       sh 'mvn clean package -X'
+        //     }
+        // } 
         stage('JENKINS TO NEXUS') {
             steps {
               withMaven(globalMavenSettingsConfig: 'settings.xml', jdk: 'jkd17', maven: 'maven3', traceability: true) {
