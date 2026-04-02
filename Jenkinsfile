@@ -33,6 +33,20 @@ pipeline {
                 }
             }
         }
+    //nexus starting
+         stage('COMPILE') {
+            steps {
+              sh 'mvn clean package'
+            }
+        } 
+        stage('JENKINS TO NEXUS') {
+            steps {
+              withMaven(globalMavenSettingsConfig: 'settings.xml', jdk: 'jkd17', maven: 'maven3', traceability: true) {
+             sh 'mvn deploy'
+             }
+            }
+        }         
+    //nexus ending    
 
         stage('Build Docker Image') {
             steps {
