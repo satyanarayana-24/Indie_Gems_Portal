@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        // WORK_DIR = "/var/lib/jenkins/workspace/Game"
+        WORK_DIR = "/var/lib/jenkins/workspace/Gamee"
         IMAGE_NAME = "indie-gems"
         IMAGE_TAG = "${BUILD_NUMBER}"
         DOCKERHUB_USER = "9397054542"
