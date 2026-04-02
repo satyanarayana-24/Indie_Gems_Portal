@@ -36,7 +36,7 @@ pipeline {
     //nexus starting
          stage('COMPILE') {
             steps {
-              sh 'mvn clean package'
+              sh 'mvn clean package -X'
             }
         } 
         stage('JENKINS TO NEXUS') {
